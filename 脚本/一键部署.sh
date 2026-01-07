@@ -10,14 +10,14 @@ set -euo pipefail  # 任何命令失败立即终止脚本
 #  - 依赖 tar 支持 -tzf（用于读取压缩包内顶级目录），并依赖标准的 ssh/scp 命令。
 #
 # 配置变量（可通过命令行覆盖）：
-TARGET_DIR="/data/dcp-application"     # 部署到的目标目录（远端和本地均使用）
-LINK_NAME="/data/dcp/deploy_t"         # 指向已部署版本的软链接
+TARGET_DIR="/data/dcp-application"      # 部署到的目标目录（远端和本地均使用）
+LINK_NAME="/data/dcp/deploy"            # 指向已部署版本的软链接
 ENABLE_DELETE=true                      # 部署后是否删除压缩包（true/false）
 SSH_USER="dcp"                          # SSH 登录用户名（默认使用当前用户名或 -u 指定）
 IDENTITY_FILE=""                        # SSH 私钥路径（如果需要免密登录）
 DEFAULT_PORT=22                         # SSH 默认端口
-SERVERS="dcp@10.68.133.41:22"                              # 要部署的主机列表（逗号或空格分隔），格式：[user@]host[:port]
-ENSURE_SSH_SETUP=true                    # 部署前是否尝试安装公钥以实现免密（可通过 --no-setup-ssh 关闭）
+SERVERS="dcp@10.68.133.41:22"           # 要部署的主机列表（逗号或空格分隔），格式：[user@]host[:port]
+ENSURE_SSH_SETUP=true                   # 部署前是否尝试安装公钥以实现免密（可通过 --no-setup-ssh 关闭）
 
 # show_usage: 打印脚本使用说明并退出（用于参数错误或用户请求帮助时）
 show_usage() {
