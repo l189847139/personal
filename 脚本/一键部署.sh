@@ -16,7 +16,7 @@ ENABLE_DELETE=true                      # 部署后是否删除压缩包（true/
 SSH_USER="dcp"                          # SSH 登录用户名（默认使用当前用户名或 -u 指定）
 IDENTITY_FILE=""                        # SSH 私钥路径（如果需要免密登录）
 DEFAULT_PORT=22                         # SSH 默认端口
-SERVERS="dcp@10.68.133.41:22,dcp@10.68.133.39:22"                              # 要部署的主机列表（逗号或空格分隔），格式：[user@]host[:port]
+SERVERS="dcp@10.68.133.41:22"                              # 要部署的主机列表（逗号或空格分隔），格式：[user@]host[:port]
 ENSURE_SSH_SETUP=true                    # 部署前是否尝试安装公钥以实现免密（可通过 --no-setup-ssh 关闭）
 
 # show_usage: 打印脚本使用说明并退出（用于参数错误或用户请求帮助时）
@@ -332,7 +332,8 @@ deploy_remote() {
   #  1) 切换到目标目录并读取压缩包中的顶级目录名称
   #  2) 若存在同名目录则清理（此为破坏性操作）
   #  3) 解压、校验、更新软链，并可选删除压缩包
-  ssh "${user}@${host}" "${SSH_OPTS[@]}" bash -s <<EOF
+# 在远端执行解压与链接操作（修复后的代码）
+ssh "${user}@${host}" "${SSH_OPTS[@]}" bash -s <<EOF
 set -e
 cd '$TARGET_DIR' || { echo '[错误] 无法进入目录：$TARGET_DIR'; exit 1; }
 BASENAME='$BASENAME'
@@ -340,41 +341,45 @@ LINK_NAME='$LINK_NAME'
 ENABLE_DELETE='$ENABLE_DELETE'
 
 # 远端解压流程说明：
-# 1) 使用 tar -tzf 读取压缩包中第一个条目以获得顶级目录名
-# 2) 若目标目录已存在则清理（危险操作）
-# 3) 解压并校验，最后更新软链并（可选）删除压缩包
-
-echo "[远程:$host] 正在解压: \$BASENAME"
-
-# 获取顶层目录名（同本地逻辑）
-TOP_DIR=$(tar -tzf "\$BASENAME" | head -1 | cut -f1 -d"/")
-if [ -z "\$TOP_DIR" ]; then
-  echo "[远程:$host][错误] 压缩包内没有顶级目录"; exit 2
+# 1) 先检查压缩包是否存在
+if [ ! -f "\$BASENAME" ]; then
+  echo "[远程:$host][错误] 压缩包不存在：\$BASENAME"; exit 2
 fi
 
+# 2) 使用 tar -tzf 读取压缩包中第一个条目以获得顶级目录名（修复转义）
+echo "[远程:$host] 正在解析压缩包顶级目录..."
+TOP_DIR=\$(tar -tzf "\$BASENAME" | head -1 | cut -f1 -d"/")
+if [ -z "\$TOP_DIR" ]; then
+  echo "[远程:$host][错误] 压缩包内无有效顶级目录"; exit 3
+fi
+
+# 3) 清理旧目录（若存在）
 if [ -d "\$TOP_DIR" ]; then
   echo "[远程:$host] 检测到已存在目录 \$TOP_DIR，执行清理..."
   rm -rf "\$TOP_DIR"
 fi
 
+# 4) 解压并校验
+echo "[远程:$host] 正在解压: \$BASENAME"
 tar -xzf "\$BASENAME"
 UNPACKED_DIR="\$TOP_DIR"
 
 if [ ! -d "\$UNPACKED_DIR" ]; then
-  echo "[远程:$host][错误] 解压目录验证失败：\$UNPACKED_DIR"; ls -l; exit 3
+  echo "[远程:$host][错误] 解压目录验证失败：\$UNPACKED_DIR"; ls -l; exit 4
 fi
 
+# 5) 创建/更新软链接（修复绝对路径转义）
 echo "[远程:$host] 创建软链接: $LINK_NAME → \$UNPACKED_DIR"
-# 获取解压后目录的绝对路径（兼容性处理）
 if command -v realpath >/dev/null 2>&1; then
-  ABS_DIR=$(realpath "\$UNPACKED_DIR")
+  ABS_DIR=\$(realpath "\$UNPACKED_DIR")
 elif command -v readlink >/dev/null 2>&1; then
-  ABS_DIR=$(readlink -f "\$UNPACKED_DIR")
+  ABS_DIR=\$(readlink -f "\$UNPACKED_DIR")
 else
-  ABS_DIR=$(cd "\$UNPACKED_DIR" && pwd -P)
+  ABS_DIR=\$(cd "\$UNPACKED_DIR" && pwd -P)
 fi
-ln -sfn "$ABS_DIR" "$LINK_NAME"
+ln -sfn "\$ABS_DIR" "\$LINK_NAME"
 
+# 6) 可选删除压缩包
 if [ "\$ENABLE_DELETE" = true ]; then
   echo "[远程:$host] 正在安全清理压缩包..."
   if [ -f "\$BASENAME" ]; then
@@ -385,7 +390,7 @@ if [ "\$ENABLE_DELETE" = true ]; then
   fi
 fi
 
-echo "[远程:$host] 部署完成，链接指向：$(ls -l $LINK_NAME)"
+echo "[远程:$host] 部署完成，链接指向：\$(ls -l "\$LINK_NAME")"
 EOF
 
   rc=$?
