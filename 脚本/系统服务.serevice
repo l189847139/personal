@@ -1,36 +1,54 @@
 [Unit]
-Description=dcp-main  # 服务描述
-After=network.target  # 依赖：网络启动后再启动该服务
-Wants=network.target   # 弱依赖：网络服务启动失败不影响本服务
+# 服务描述
+Description=dcp-main
+# 依赖：在网络启动后再启动该服务
+After=network.target
+# 弱依赖：网络服务启动失败不影响本服务
+Wants=network.target
 
 [Service]
-Type=simple  # 服务类型（常用：simple/exec/forking）
-User=dcp    # 运行服务的用户（建议用非 root 用户，如 appuser）
-Group=dcp   # 运行服务的用户组
-WorkingDirectory=/data/dcp/deploy  # 工作目录
-ExecStart=/data/dcp/deploy/start.sh  # 启动命令/脚本
-ExecReload=/bin/kill -HUP $dcp-main-1.9.0.RELEASE.PID  # 重载命令（可选）
-ExecStop=/bin/kill -TERM $dcp-main-1.9.0.RELEASE.PID   # 停止命令（可选）
-Restart=always  # 异常时自动重启（推荐：always/on-failure）
-RestartSec=30    # 重启间隔（秒）
-TimeoutSec=30   # 启动超时时间
-StandardOutput=journal+console  # 日志输出位置
-StandardError=journal+console   # 错误日志输出位置
+# 如果 start.sh 在前台运行，保持 Type=simple ，不用配置 PIDFile；如果会 后台运行，请改为 Type=forking 并配置 PIDFile
+Type=forking
+# 运行服务的用户
+User=dcp
+# 运行服务的用户组
+Group=dcp
+# 工作目录
+WorkingDirectory=/data/dcp/deploy
+# 启动命令或脚本
+ExecStart=/data/dcp/deploy/start.sh
+# 使用 $MAINPID（由 systemd 管理）来发送信号，避免手动读取 PID 文件
+ExecReload=/bin/kill -HUP $MAINPID
+ExecStop=/bin/kill -TERM $MAINPID
+# 如果你的应用写入了 PID 文件，取消下面一行注释并修改路径
+PIDFile=/data/dcp/deploy/dcp-main-1.9.0.RELEASE.pid
+# 异常时自动重启（推荐：always/on-failure）
+Restart=always
+# 重启间隔（秒）
+RestartSec=5s
+# 重启超时时间
+TimeoutSec=30s
+# 日志输出位置
+StandardOutput=journal+console
+# 错误日志输出位置
+StandardError=journal+console
+# control-group彻底杀死所有相关进程（主进程 + 子进程），
+KillMode=control-group
 
 [Install]
-WantedBy=multi-user.target  # 开机自启的运行级别（多用户模式）
+# 在多用户模式下启动（开机自启）
+WantedBy=multi-user.target
 
-# 重新加载 systemd 配置（修改服务文件后必做）
+
+
+#------------------------系统控制命令---------------------#
+# 修改配置后重载 systemd 配置（必须执行，否则修改不生效）
 #sudo systemctl daemon-reload
 # 启动服务
-#sudo systemctl start myapp.service
+#sudo systemctl start dcp-main.service
 # 设置开机自启
-#sudo systemctl enable myapp.service
-# 查看服务状态（关键：检查是否启动成功）
-#sudo systemctl status myapp.service
-# 停止服务
-#sudo systemctl stop myapp.service
-# 禁用开机自启
-#sudo systemctl disable myapp.service
-# 查看服务日志（排查问题）
-#sudo journalctl -u myapp.service -f  # -f 实时查看日志
+#sudo systemctl enable dcp-main.service
+# 查看服务状态（是否运行、报错信息）
+#sudo systemctl status dcp-main.service
+# 实时查看服务日志（调试用）
+#sudo journalctl -u dcp-main.service -f
