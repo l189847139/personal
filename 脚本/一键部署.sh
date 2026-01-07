@@ -25,6 +25,7 @@ show_usage() {
 用法: $0 <压缩包> | $0 -f <压缩包> [-s <servers>] [选项]
 
 说明:
+  本脚本用于将程序部署到 Linux 主机（远端需为 Linux 系统）。
   直接传入压缩包文件名（路径或文件名）即可执行本地部署，例如：
     $0 myapp.tar.gz
   或使用 -f 指定压缩包，并可通过 -s 指定多台服务器进行远程部署。
@@ -111,7 +112,36 @@ try_setup_ssh_on_host() {
 check_ssh_auth() {
   local user="$1" host="$2" port="$3"
   ssh -o BatchMode=yes -o ConnectTimeout=5 -p "$port" "${user}@${host}" 'echo SSH_OK' >/dev/null 2>&1
-} 
+}
+
+# resolve_path: 兼容的绝对路径解析函数，优先 realpath -> readlink -f -> cd + pwd
+resolve_path() {
+  local p="$1"
+  if command -v realpath >/dev/null 2>&1; then
+    realpath "$p"
+  elif command -v readlink >/dev/null 2>&1; then
+    readlink -f "$p"
+  else
+    (cd "$p" && pwd -P)
+  fi
+}
+
+# 检查运行所需命令（tar/ssh/scp），以及在启用自动安装公钥时检查 ssh-keygen
+check_commands() {
+  local cmds=(tar ssh scp)
+  for c in "${cmds[@]}"; do
+    if ! command -v "$c" >/dev/null 2>&1; then
+      error "需要的命令不存在：$c，请在目标 Linux 主机或本机安装后重试"
+      exit 2
+    fi
+  done
+  if [ "${ENSURE_SSH_SETUP:-true}" = true ]; then
+    if ! command -v ssh-keygen >/dev/null 2>&1; then
+      error "ssh-keygen 未找到，但 ENSURE_SSH_SETUP=true，无法生成或处理密钥，请安装 openssh-client 或相应包"
+      exit 2
+    fi
+  fi
+}
 
 # 参数解析
 # 支持：-f/--file 指定文件；-s/--servers 指定主机列表；也可直接把压缩包作为第一个位置参数（示例: ./一键部署.sh myapp.tar.gz）
@@ -160,6 +190,9 @@ fi
 
 BASENAME=$(basename -- "$COMPRESS_FILE")
 
+# 运行前检测必需命令与环境（针对 Linux 目标和本地环境）
+check_commands
+
 # 本地部署函数（deploy_local）
 # 步骤说明：
 #  1) 确保目标目录存在并 cd 进入
@@ -197,7 +230,8 @@ deploy_local() {
 
   # 创建或更新符号链接，ln -sfn 用于原子更新
   echo "创建软链接: $LINK_NAME → $UNPACKED_DIR"
-  ln -sfn "$(realpath "$UNPACKED_DIR")" "$LINK_NAME"
+  ABS_DIR=$(resolve_path "$UNPACKED_DIR")
+  ln -sfn "$ABS_DIR" "$LINK_NAME"
 
   # 可选地删除上传的压缩包以释放空间
   if [ "$ENABLE_DELETE" = true ]; then
@@ -331,7 +365,15 @@ if [ ! -d "\$UNPACKED_DIR" ]; then
 fi
 
 echo "[远程:$host] 创建软链接: $LINK_NAME → \$UNPACKED_DIR"
-ln -sfn "$(realpath "\$UNPACKED_DIR")" "$LINK_NAME"
+# 获取解压后目录的绝对路径（兼容性处理）
+if command -v realpath >/dev/null 2>&1; then
+  ABS_DIR=$(realpath "\$UNPACKED_DIR")
+elif command -v readlink >/dev/null 2>&1; then
+  ABS_DIR=$(readlink -f "\$UNPACKED_DIR")
+else
+  ABS_DIR=$(cd "\$UNPACKED_DIR" && pwd -P)
+fi
+ln -sfn "$ABS_DIR" "$LINK_NAME"
 
 if [ "\$ENABLE_DELETE" = true ]; then
   echo "[远程:$host] 正在安全清理压缩包..."
