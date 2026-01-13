@@ -15,7 +15,7 @@ User=dcp
 Group=dcp
 # 工作目录
 WorkingDirectory=/data/dcp/deploy
-# 启动命令或脚本
+# 启动命令或脚本(如日志未输出到指定位置，需在脚本中配置重定向;重定向格式 nohup $JAVA_CMD -Xms4g -Xmx4g -jar $JAR_FILE >> $LOG_FILE 2>&1 &)
 ExecStart=/data/dcp/deploy/start.sh
 # 使用 $MAINPID（由 systemd 管理）来发送信号，避免手动读取 PID 文件
 ExecReload=/bin/kill -HUP $MAINPID
@@ -24,14 +24,18 @@ ExecStop=/bin/kill -TERM $MAINPID
 PIDFile=/data/dcp/deploy/dcp-main-1.9.0.RELEASE.pid
 # 异常时自动重启（推荐：always/on-failure）
 Restart=always
+# 关闭启动超时检测，彻底解决timeout was exceeded
+TimeoutStartSec=0 
+# 可选，优雅停止超时时间，防止停止服务时报错
+TimeoutStopSec=30 
 # 重启间隔（秒）
 RestartSec=5s
 # 重启超时时间
 TimeoutSec=30s
 # 日志输出位置
-StandardOutput=journal+console
+#StandardOutput=journal+console
 # 错误日志输出位置
-StandardError=journal+console
+#StandardError=journal+console
 # control-group彻底杀死所有相关进程（主进程 + 子进程），
 KillMode=control-group
 
